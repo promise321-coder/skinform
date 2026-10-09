@@ -35,16 +35,16 @@ export default async function handler(req, res) {
         !message ||
         !['system', 'user', 'assistant'].includes(message.role) ||
         typeof message.content !== 'string' ||
-        message.content.length > 8000
+        message.content.length > 16000
     ) ||
-    messages.reduce((total, message) => total + message.content.length, 0) > 20000
+    messages.reduce((total, message) => total + message.content.length, 0) > 30000
   ) {
     return json(res, 400, { error: 'Invalid AI messages.' });
   }
 
   const requestOptions = task === 'quiz'
     ? { response_format: { type: 'json_object' }, temperature: 0.3, max_tokens: 350 }
-    : { temperature: 0.6, max_tokens: 300 };
+    : { response_format: { type: 'json_object' }, temperature: 0.7, max_tokens: 450 };
 
   if (task === 'quiz' && responseFormat !== 'json') {
     return json(res, 400, { error: 'Invalid quiz response format.' });
@@ -69,6 +69,20 @@ export default async function handler(req, res) {
       const data = await upstream.json();
       const content = data.choices?.[0]?.message?.content;
       if (typeof content === 'string' && content.length > 0) {
+        if (task === 'chat') {
+          try {
+            const chatResponse = JSON.parse(content);
+            if (
+              typeof chatResponse.reply !== 'string' ||
+              !Array.isArray(chatResponse.suggestedProductIds)
+            ) {
+              throw new Error('Invalid chat response shape.');
+            }
+          } catch (error) {
+            console.warn(`Groq request using ${model} returned invalid chat JSON:`, error);
+            continue;
+          }
+        }
         return json(res, 200, { content });
       }
 

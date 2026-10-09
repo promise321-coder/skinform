@@ -19,6 +19,21 @@ const STARTER_PROMPTS = [
   "How fast is delivery to Lagos & other Nigerian states?"
 ];
 
+const CHATBOT_INSTRUCTIONS = `You are Titi, the friendly skincare concierge for Lumière Botanics, a Nigerian skincare brand.
+
+Your first job is to understand and answer the customer's latest message. Read the whole message and the recent conversation; do not match one keyword and jump to a canned skincare answer. A question about lip gloss is about lip gloss, not dark spots. A greeting is just a greeting. Keep the conversation coherent and use earlier messages when the customer refers to something they mentioned.
+
+Be warm, natural, and lightly witty when it fits. Nigerian phrasing is welcome occasionally, but don't force slang, jokes, pet names, or emojis. Match the customer's tone. Be especially kind and non-judgmental about skin, appearance, and budget. Keep ordinary replies concise; use clear steps only when someone asks for a routine or detailed explanation.
+
+The product catalog below is the current catalog supplied by the store. It may have been edited in the browser's admin page. Use only products and facts in this catalog. If someone asks about something not listed (for example, lip gloss), say plainly and warmly that you don't see it in the current catalog. Do not pivot to an unrelated skincare concern or recommend a random product. Offer an alternative only when the customer asks for one and the catalog contains a genuinely relevant option.
+
+For product questions, recommendations, availability, ingredients, usage, and prices, rely on the catalog. Never invent prices, products, ingredients, delivery terms, medical claims, or stock. Do not diagnose or promise results. Answer general conversation and unrelated questions naturally without turning everything into a sales pitch.
+
+Return only a valid JSON object with this exact shape:
+{"reply":"A natural response to the latest message","suggestedProductIds":[]}
+
+Set suggestedProductIds to one or more real catalog IDs only when the customer asks to see, buy, or get a recommendation for relevant products. Otherwise use an empty array. Never put JSON, markdown fences, or IDs inside the reply string.`;
+
 export default function AIChatbotEnquiry({
   products,
   currency,
@@ -72,84 +87,46 @@ export default function AIChatbotEnquiry({
 
   // Smart local response generator if API network is offline
   const generateLocalResponse = (query) => {
-    const q = query.toLowerCase();
-    const normalizedQuery = q.replace(/[^\w\s']/g, '').trim();
+    const normalizedQuery = query.toLowerCase().replace(/[^\w\s']/g, '').trim();
 
-    if (/^(hi|hello|hey|heya|hiya|good morning|good afternoon|good evening|how are you|how far|sup)\b/.test(normalizedQuery)) {
+    if (/^(hi|hello|hey|heya|hiya|good morning|good afternoon|good evening|how are you|how far|sup)[\s!?.,]*$/.test(normalizedQuery)) {
       return {
-        content: "Hey, welcome! 😊 I’m good, thanks for asking—ready to gist skincare whenever you are. How are you, and what’s on your mind?",
+        content: "Hey, welcome 😊 How are you doing? What’s on your mind?",
         suggestedProductIds: []
       };
     }
 
-    // Check specific product match
-    const matchedProducts = products.filter(p =>
-      q.includes(p.name.toLowerCase()) ||
-      q.includes(p.id.toLowerCase()) ||
-      (p.tag && q.includes(p.tag.toLowerCase()))
-    );
+    const matchedProduct = products.find((product) => {
+      const name = product.name.toLowerCase();
+      return normalizedQuery.includes(name) || normalizedQuery.includes(product.id.toLowerCase());
+    });
 
-    // 1. Price Inquiry
-    if (q.includes('price') || q.includes('cost') || q.includes('how much')) {
-      if (matchedProducts.length > 0) {
-        const prod = matchedProducts[0];
-        return {
-          content: `Good choice 😊 **${prod.name}** is **${formatPrice(prod.price)}**. Your wallet can relax; no surprise maths here!`,
-          suggestedProductIds: [prod.id]
-        };
-      }
+    if (matchedProduct && /\b(price|cost|how much|available|in stock|buy|purchase)\b/.test(normalizedQuery)) {
       return {
-        content: "Which product are you eyeing? Tell me its name and I’ll get you the exact price—no need for guesswork 😊",
+        content: `**${matchedProduct.name}** is ${formatPrice(matchedProduct.price)}.${matchedProduct.inStock === false ? ' It is currently marked out of stock.' : ''}`,
+        suggestedProductIds: /\b(buy|purchase|show|recommend)\b/.test(normalizedQuery) ? [matchedProduct.id] : []
+      };
+    }
+
+    if (matchedProduct) {
+      return {
+        content: `**${matchedProduct.name}** — ${matchedProduct.shortDesc || matchedProduct.description || 'I can help with its details.'}`,
+        suggestedProductIds: /\b(show|picture|photo|image|buy|purchase|recommend)\b/.test(normalizedQuery)
+          ? [matchedProduct.id]
+          : []
+      };
+    }
+
+    const requestedProduct = /\b(lip gloss|lipstick|makeup|product|products|catalog|catalogue)\b/.test(normalizedQuery);
+    if (requestedProduct) {
+      return {
+        content: `I don’t see that in the current product list, so I don’t want to point you to something unrelated 😊 Is there another item you’d like me to check?`,
         suggestedProductIds: []
-      };
-    }
-
-    // 2. Delivery & Shipping
-    if (q.includes('delivery') || q.includes('ship') || q.includes('lagos') || q.includes('location')) {
-      return {
-        content: "Let’s get your goodies to you 🚚 We offer **Same-Day Lagos Delivery** (₦2,500) and **2–3 day interstate delivery** (₦3,500).",
-        suggestedProductIds: []
-      };
-    }
-
-    // 3. Hyperpigmentation / Dark Spots
-    if (q.includes('hyperpigmentation') || q.includes('dark spot') || q.includes('discoloration') || q.includes('glow')) {
-      const serum = products.find(p => p.id === 'botanical-glow-drop-serum');
-      const spf = products.find(p => p.id === 'sol-shield-spf50');
-      return {
-        content: "Dark spots can be stubborn, but we can build a gentle routine 😊 **Botanical Glow Serum** and daily **Sol Shield SPF 50** are a good place to start; sunscreen helps stop spots from getting darker.",
-        suggestedProductIds: [serum?.id, spf?.id].filter(Boolean)
-      };
-    }
-
-    // 4. Cleansers / Acne / Oily Skin
-    if (q.includes('cleanser') || q.includes('acne') || q.includes('oily') || q.includes('pimple') || q.includes('wash')) {
-      const cleanser = products.find(p => p.id === 'salises-purifying-cleanser');
-      return {
-        content: "Oily-skin shine in this Naija heat? We understand 😅 **Salises Purifying Cleanser** is a lovely option for oily, acne-prone skin.",
-        suggestedProductIds: [cleanser?.id].filter(Boolean)
-      };
-    }
-
-    // 5. Explicit request for image / show product
-    if (q.includes('image') || q.includes('picture') || q.includes('photo') || q.includes('show me') || q.includes('catalogue') || q.includes('catalog')) {
-      return {
-        content: "Coming right up—here are a few of our skincare favourites ✨",
-        suggestedProductIds: products.slice(0, 3).map(p => p.id)
-      };
-    }
-
-    // Default general answer
-    if (matchedProducts.length > 0) {
-      const prod = matchedProducts[0];
-      return {
-        content: `Ooh, **${prod.name}** 😊 It’s **${formatPrice(prod.price)}**${prod.tag ? ` and ${prod.tag.toLowerCase()}` : ''}.`,
-        suggestedProductIds: [prod.id]
       };
     }
 
     return {
-      content: "I’m listening 😊 Tell me what’s on your mind—your skin concern, a product you’re curious about, or even just a quick question. No skincare exam, I promise!",
+      content: "I’m having trouble reaching my AI helper right now, so I don’t want to guess and give you the wrong answer. Please try again in a little while 😊",
       suggestedProductIds: []
     };
   };
@@ -174,41 +151,14 @@ export default function AIChatbotEnquiry({
       price: p.price,
       category: p.category,
       tag: p.tag,
-      description: p.description,
+      shortDesc: p.shortDesc || p.description?.slice(0, 240),
+      keyActives: p.keyActives?.map(({ name, role }) => ({ name, role })),
+      concerns: p.concerns,
+      skinTypes: p.skinTypes,
       inStock: p.inStock !== false
     }));
 
-    const systemPrompt = `You are Titi, a warm, witty, knowledgeable skincare concierge for Lumière Botanics, a Nigerian skincare brand. Talk like a real, friendly Nigerian person—not a call-centre script, medical textbook, or sales bot. Your customer may be anywhere in Nigeria, so keep the tone welcoming and easy to understand.
-
-Conversation style:
-You are "Glow-Buddy," a witty, warm, and highly expressive Nigerian skincare expert and hype-person. 
-
-CRITICAL BEHAVIOR RULES:
-- TONALITY: Speak like a fashionable, tech-savvy Nigerian bestie. Use correct English mixed with light, popular Nigerian phrasing/slang (e.g., "my dear," "premium," "soft life," "enter eye," "chills"). Be highly empathetic but full of humor and playful banter. Use emojis organically.
-- BREVITY: Keep your responses short, punchy, and conversational. Never generate long, structured corporate paragraphs or bulleted lists unless explicitly asked for a routine.
-- GREETINGS: If the user says "hello" or "hi", respond with a short, high-energy, witty greeting (e.g., "Hey gorgeous! Welcome to the soft life headquarters. What are we glowing up today?"). 
-- MISSING PRODUCT FALLBACK: If a user asks for a product, brand, or ingredient that is NOT in your database (like a specific lip gloss), NEVER say "I am an AI assistant" or give a dry error. Instead, playfully tease the request, tell them it's not in the vault yet, and suggest a relatable alternative or ask what skin goal they want to achieve.
-- Respond to what the person actually said. If they say "hello", greet them warmly and ask how they are or what is on their mind. Never answer a greeting with a list of things they can ask.
-- Be personable, relaxed, kind, and naturally funny. Use light, affectionate humour when it fits (for example, a playful nod to Nigerian heat or harmattan), but never force a joke or make fun of someone's skin, appearance, budget, identity, or concern.
-- Nigerian expressions such as "How far?", "no wahala", or "this Naija heat" are welcome occasionally and only when they sound natural. Don't overdo slang, assume a particular dialect, or imitate a caricature. Plain, warm English is always fine.
-- Match the user's energy and message length. A greeting or casual chat deserves a casual reply; a worried skin concern deserves empathy; a direct factual question deserves a clear answer. Don't make every reply a pitch or tack on a question unnecessarily.
-- Keep most replies to 1–3 short, natural sentences. Avoid canned openers, repeated phrases, excessive exclamation marks, and robotic labels such as "Product Suggestion" or "Price".
-
-Skincare and product guidance:
-- Use only the product information in the catalog below. Never invent products, ingredients, stock, prices, delivery promises, or medical claims. Prices in the catalog are in naira; quote the exact listed price when asked.
-- For oily/acne-prone skin, Salises Purifying Cleanser may be relevant. For dark spots/hyperpigmentation, Botanical Glow Drop Serum and Sol Shield SPF 50 may be relevant. Explain benefits cautiously; don't promise a cure or diagnose.
-- Be thoughtful and reassuring about skin concerns. Avoid implying that natural skin tones or normal skin texture need fixing.
-- Only when the user asks for a product recommendation, a specific product, or product images, add this JSON block at the very end, using real product IDs from the catalog. Do not add it to greetings or general questions:
-\`\`\`json
-{ "suggestedProductIds": ["product-id-1"] }
-\`\`\`
-
-Product Catalog:
-${JSON.stringify(productCatalogSummary, null, 2)}`
-
-
-
-
+    const systemPrompt = `${CHATBOT_INSTRUCTIONS}\n\nCurrent product catalog:\n${JSON.stringify(productCatalogSummary)}`;
 
     const chatHistory = messages
       .filter(m => m.id !== 'welcome-msg')
@@ -226,29 +176,20 @@ ${JSON.stringify(productCatalogSummary, null, 2)}`
         ...chatHistory,
         { role: 'user', content: query.trim() }
       ]);
-      let assistantText = assistantContent;
-      let suggestedIds = [];
-
-      // Extract JSON suggestedProductIds if present
-      const jsonMatch = assistantText.match(/```json\s*(\{[\s\S]*?\})\s*```/);
-      if (jsonMatch) {
-        try {
-          const parsed = JSON.parse(jsonMatch[1]);
-          if (Array.isArray(parsed.suggestedProductIds)) {
-            suggestedIds = parsed.suggestedProductIds;
-          }
-        } catch {
-          // Ignore malformed optional product recommendations.
-        }
-        assistantText = assistantText.replace(/```json\s*\{[\s\S]*?\}\s*```/g, '').trim();
+      const result = JSON.parse(assistantContent);
+      if (typeof result.reply !== 'string' || !Array.isArray(result.suggestedProductIds)) {
+        throw new Error('AI returned an invalid chat response.');
       }
+      const suggestedIds = result.suggestedProductIds
+        .filter((id) => typeof id === 'string' && products.some((product) => product.id === id))
+        .slice(0, 4);
 
       setMessages((prev) => [
         ...prev,
         {
           id: `ai-${Date.now()}`,
           role: 'assistant',
-          content: assistantText,
+          content: result.reply,
           suggestedProductIds: suggestedIds
         }
       ]);
@@ -336,10 +277,8 @@ ${JSON.stringify(productCatalogSummary, null, 2)}`
         <div className="p-4 rounded-2xl bg-gradient-to-r from-botanic-900/10 via-cream-100 to-gold-100/50 border border-gold-400/30 flex items-center gap-3 shadow-xs">
           <Sparkles className="w-5 h-5 text-gold-600 shrink-0" />
           <div className="text-xs text-botanic-950 space-y-0.5">
-            <p className="font-bold">Ask about product prices, ingredients, or customized routine advice</p>
-            <p className="text-charcoal-600 text-[11px]">
-              Trained on Lumière Botanics NAFDAC-certified formulations.
-            </p>
+            <p className="font-bold">Ask Titi anything—skincare, products, or just have a chat 😊</p>
+            <p className="text-charcoal-600 text-[11px]">She’ll use the latest product list available in this store.</p>
           </div>
         </div>
 
@@ -429,7 +368,7 @@ ${JSON.stringify(productCatalogSummary, null, 2)}`
             </div>
             <div className="p-3.5 bg-white border border-cream-200 rounded-2xl rounded-tl-xs text-xs text-charcoal-600 flex items-center gap-2 shadow-xs">
               <Loader2 className="w-4 h-4 animate-spin text-gold-600" />
-              <span>Lumière AI is analyzing skincare catalog...</span>
+              <span>Titi is thinking...</span>
             </div>
           </div>
         )}
@@ -467,7 +406,7 @@ ${JSON.stringify(productCatalogSummary, null, 2)}`
           >
             <input
               type="text"
-              placeholder="Ask about skincare products, prices, hyperpigmentation..."
+              placeholder="Message Titi..."
               value={inputQuery}
               onChange={(e) => setInputQuery(e.target.value)}
               disabled={isGenerating}
