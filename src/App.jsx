@@ -42,18 +42,22 @@ export default function App() {
 
   useEffect(() => {
     const handleRouteChange = () => {
-      setCurrentRoute(window.location.hash || window.location.pathname);
+      const nextRoute = window.location.hash || window.location.pathname;
+      setCurrentRoute(nextRoute);
     };
+
+    handleRouteChange();
     window.addEventListener('popstate', handleRouteChange);
     window.addEventListener('hashchange', handleRouteChange);
+
     return () => {
       window.removeEventListener('popstate', handleRouteChange);
       window.removeEventListener('hashchange', handleRouteChange);
     };
   }, []);
 
-  const isAdminView = currentRoute.includes('/admin');
-  const isEnquiryView = currentRoute.includes('/enquiry');
+  const isAdminView = currentRoute.includes('/admin') || window.location.pathname.includes('/admin');
+  const isEnquiryView = currentRoute.includes('/enquiry') || window.location.pathname.includes('/enquiry');
 
   // Store Configuration
   const [currency, setCurrency] = useState('NGN');
@@ -132,8 +136,9 @@ export default function App() {
   };
 
   const handleNavigateToEnquiry = () => {
-    window.location.hash = '#/enquiry';
-    setCurrentRoute('#/enquiry');
+    const nextPath = '/enquiry';
+    window.history.pushState({}, '', nextPath);
+    setCurrentRoute(nextPath);
   };
 
   // Cart Handlers
