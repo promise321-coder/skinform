@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, Sparkles, ArrowRight, CheckCircle2, ShoppingBag, RotateCcw, MessageCircle, Loader2, Bot } from 'lucide-react';
 import { QUIZ_QUESTIONS } from '../data/products';
+import { requestGroq } from '../lib/groq';
 
 export default function SkinQuizModal({
   isOpen,
@@ -53,12 +54,6 @@ export default function SkinQuizModal({
   };
 
   const fetchGroqAIRecommendation = async (userAnswers) => {
-    const apiKey = import.meta.env.VITE_GROQ_API_KEY;
-
-    if (!apiKey) {
-      return null;
-    }
-
     const productCatalogSummary = products.map(p => ({
       id: p.id,
       name: p.name,
@@ -85,40 +80,16 @@ Respond strictly with valid JSON format only, no additional markdown wrapping or
 - Routine Preference: ${userAnswers.routineLength || 'Essential'}
 - Sun Exposure: ${userAnswers.sunExposure || 'High'}`;
 
-    const modelsToTry = ['groq/compound', 'openai/gpt-oss-20b', 'llama3-70b-8192'];
-
-    for (const modelName of modelsToTry) {
-      try {
-        const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}`
-          },
-          body: JSON.stringify({
-            model: modelName,
-            response_format: { type: 'json_object' },
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: userPrompt }
-            ],
-            temperature: 0.3,
-            max_tokens: 350
-          })
-        });
-
-        if (response.status === 200) {
-          const data = await response.json();
-          const content = data.choices?.[0]?.message?.content;
-          if (content) {
-            return JSON.parse(content);
-          }
-        }
-      } catch (err) {
-        console.warn(`Groq AI ${modelName} model error:`, err);
-      }
+    try {
+      const content = await requestGroq('quiz', [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt }
+      ], 'json');
+      return JSON.parse(content);
+    } catch (err) {
+      console.warn('Groq skin quiz request failed:', err);
+      return null;
     }
-    return null;
   };
 
   const handleSelectOption = async (questionId, value) => {
@@ -385,4 +356,3 @@ Respond strictly with valid JSON format only, no additional markdown wrapping or
     </div>
   );
 }
-

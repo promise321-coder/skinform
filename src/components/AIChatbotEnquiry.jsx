@@ -10,20 +10,13 @@ import {
   Loader2,
   Package
 } from 'lucide-react';
+import { requestGroq } from '../lib/groq';
 
 const STARTER_PROMPTS = [
   "What is the price of Sol Shield SPF 50?",
   "Recommend a routine for hyperpigmentation & dark spots",
   "What cleansers are best for oily, acne-prone skin?",
   "How fast is delivery to Lagos & other Nigerian states?"
-];
-
-// Fallback Groq model candidates in order of preference
-const GROQ_MODELS = [
-  'groq/compound',
-  'openai/gpt-oss-20b',
-  'llama3-70b-8192',
-  'qwen/qwen3.8-27b'
 ];
 
 export default function AIChatbotEnquiry({
@@ -37,7 +30,7 @@ export default function AIChatbotEnquiry({
       {
         id: 'welcome-msg',
         role: 'assistant',
-        content: "Hello! I am **Titi**, your personal dermatologist assistant. Ask me anything about our melanin skincare formulations, product prices, key ingredients, or custom routine recommendations for your skin goals!",
+        content: "Hey, welcome! I’m **Titi** 😊 How are you doing? I can help with your skincare questions, product prices, or finding a routine that fits your skin. What’s on your mind?",
         suggestedProductIds: [] // No product cards by default until requested
       }
     ];
@@ -80,6 +73,14 @@ export default function AIChatbotEnquiry({
   // Smart local response generator if API network is offline
   const generateLocalResponse = (query) => {
     const q = query.toLowerCase();
+    const normalizedQuery = q.replace(/[^\w\s']/g, '').trim();
+
+    if (/^(hi|hello|hey|heya|hiya|good morning|good afternoon|good evening|how are you|how far|sup)\b/.test(normalizedQuery)) {
+      return {
+        content: "Hey, welcome! 😊 I’m good, thanks for asking—ready to gist skincare whenever you are. How are you, and what’s on your mind?",
+        suggestedProductIds: []
+      };
+    }
 
     // Check specific product match
     const matchedProducts = products.filter(p =>
@@ -93,12 +94,12 @@ export default function AIChatbotEnquiry({
       if (matchedProducts.length > 0) {
         const prod = matchedProducts[0];
         return {
-          content: `**${prod.name}** is **${formatPrice(prod.price)}**.`,
+          content: `Good choice 😊 **${prod.name}** is **${formatPrice(prod.price)}**. Your wallet can relax; no surprise maths here!`,
           suggestedProductIds: [prod.id]
         };
       }
       return {
-        content: "Prices: Sol Shield SPF 50 (₦18,500), Botanical Glow Serum (₦22,000), Salises Cleanser (₦16,000).",
+        content: "Which product are you eyeing? Tell me its name and I’ll get you the exact price—no need for guesswork 😊",
         suggestedProductIds: []
       };
     }
@@ -106,7 +107,7 @@ export default function AIChatbotEnquiry({
     // 2. Delivery & Shipping
     if (q.includes('delivery') || q.includes('ship') || q.includes('lagos') || q.includes('location')) {
       return {
-        content: "🚚 **Same-Day Lagos Delivery** (₦2,500) & 2-3 day interstate delivery across Nigeria (₦3,500).",
+        content: "Let’s get your goodies to you 🚚 We offer **Same-Day Lagos Delivery** (₦2,500) and **2–3 day interstate delivery** (₦3,500).",
         suggestedProductIds: []
       };
     }
@@ -116,7 +117,7 @@ export default function AIChatbotEnquiry({
       const serum = products.find(p => p.id === 'botanical-glow-drop-serum');
       const spf = products.find(p => p.id === 'sol-shield-spf50');
       return {
-        content: "We recommend **Botanical Glow Serum** and **Sol Shield SPF 50** to fade dark spots and prevent hyperpigmentation.",
+        content: "Dark spots can be stubborn, but we can build a gentle routine 😊 **Botanical Glow Serum** and daily **Sol Shield SPF 50** are a good place to start; sunscreen helps stop spots from getting darker.",
         suggestedProductIds: [serum?.id, spf?.id].filter(Boolean)
       };
     }
@@ -125,7 +126,7 @@ export default function AIChatbotEnquiry({
     if (q.includes('cleanser') || q.includes('acne') || q.includes('oily') || q.includes('pimple') || q.includes('wash')) {
       const cleanser = products.find(p => p.id === 'salises-purifying-cleanser');
       return {
-        content: "For oily & acne-prone skin, we recommend **Salises Purifying Cleanser** with Salicylic Acid.",
+        content: "Oily-skin shine in this Naija heat? We understand 😅 **Salises Purifying Cleanser** is a lovely option for oily, acne-prone skin.",
         suggestedProductIds: [cleanser?.id].filter(Boolean)
       };
     }
@@ -133,7 +134,7 @@ export default function AIChatbotEnquiry({
     // 5. Explicit request for image / show product
     if (q.includes('image') || q.includes('picture') || q.includes('photo') || q.includes('show me') || q.includes('catalogue') || q.includes('catalog')) {
       return {
-        content: "Here are our top melanin skincare formulations:",
+        content: "Coming right up—here are a few of our skincare favourites ✨",
         suggestedProductIds: products.slice(0, 3).map(p => p.id)
       };
     }
@@ -142,13 +143,13 @@ export default function AIChatbotEnquiry({
     if (matchedProducts.length > 0) {
       const prod = matchedProducts[0];
       return {
-        content: `**${prod.name}** (${formatPrice(prod.price)}) — ${prod.tag || 'Formulated for melanin skin'}.`,
+        content: `Ooh, **${prod.name}** 😊 It’s **${formatPrice(prod.price)}**${prod.tag ? ` and ${prod.tag.toLowerCase()}` : ''}.`,
         suggestedProductIds: [prod.id]
       };
     }
 
     return {
-      content: "Feel free to ask about specific products, prices, hyperpigmentation, or delivery!",
+      content: "I’m listening 😊 Tell me what’s on your mind—your skin concern, a product you’re curious about, or even just a quick question. No skincare exam, I promise!",
       suggestedProductIds: []
     };
   };
@@ -167,8 +168,6 @@ export default function AIChatbotEnquiry({
     if (!textToSend) setInputQuery('');
     setIsGenerating(true);
 
-    const apiKey = import.meta.env.VITE_GROQ_API_KEY;
-
     const productCatalogSummary = products.map((p) => ({
       id: p.id,
       name: p.name,
@@ -179,31 +178,30 @@ export default function AIChatbotEnquiry({
       inStock: p.inStock !== false
     }));
 
-    const systemPrompt = `You are "Titi," the warm, empathetic, and expert AI skincare assistant for a premium Nigerian beauty brand. Your job is to help customers find the best solutions for their skin concerns while making them feel heard, valued, and pampered. 
+    const systemPrompt = `You are Titi, a warm, witty, knowledgeable skincare concierge for Lumière Botanics, a Nigerian skincare brand. Talk like a real, friendly Nigerian person—not a call-centre script, medical textbook, or sales bot. Your customer may be anywhere in Nigeria, so keep the tone welcoming and easy to understand.
 
-Follow these strict conversational guidelines:
-1. TONE & PERSONALITY: Be deeply empathetic, warm, and human. Avoid sounding like a rigid database. Use a polite, friendly Nigerian customer service tone (warm, respectful, slightly enthusiastic). You can occasionally use mild, widely accepted local expressions like "Oh, I completely understand," "Don't worry, love," or "We’ve got you covered!" if a customer is frustrated with their skin.
-2. EMPATHY FIRST: Before recommending a product or quoting a price, acknowledge the user's struggle. Validate their feelings (e.g., "Ah, dealing with oily skin can be so stressful, especially in this heat!").
-3. BREVITY & SCANNABILITY: Keep your responses short, punchy, and conversational (ideally 2-3 sentences max). Do not dump long paragraphs.
-4. FORMATTING: Separate the empathy/benefit statement from the price so it is easy to read. Never just blurt out a price alone.
-5. RESTRICTIONS: Do not use robotic phrases like "Product Suggestion:" or "Price: ₦X". Speak like a human beauty consultant texting a friend.
-   If asked about prices: State the exact price in ₦ (Naira).
-6. If asked about oily/acne skin: Recommend Salises Purifying Cleanser.
-7. If asked about dark spots/hyperpigmentation: Recommend Botanical Glow Drop Serum and Sol Shield SPF 50.
-8. ONLY if the user asks for recommendations, specific products, or images, append a JSON block at the VERY END with product IDs:
-9. Make your answer concise and a bit short.
-10. Make sure you bolden the product name and prices by adding  before the product name and prices and ** after the product name and prices
+Conversation style:
+You are "Glow-Buddy," a witty, warm, and highly expressive Nigerian skincare expert and hype-person. 
+
+CRITICAL BEHAVIOR RULES:
+- TONALITY: Speak like a fashionable, tech-savvy Nigerian bestie. Use correct English mixed with light, popular Nigerian phrasing/slang (e.g., "my dear," "premium," "soft life," "enter eye," "chills"). Be highly empathetic but full of humor and playful banter. Use emojis organically.
+- BREVITY: Keep your responses short, punchy, and conversational. Never generate long, structured corporate paragraphs or bulleted lists unless explicitly asked for a routine.
+- GREETINGS: If the user says "hello" or "hi", respond with a short, high-energy, witty greeting (e.g., "Hey gorgeous! Welcome to the soft life headquarters. What are we glowing up today?"). 
+- MISSING PRODUCT FALLBACK: If a user asks for a product, brand, or ingredient that is NOT in your database (like a specific lip gloss), NEVER say "I am an AI assistant" or give a dry error. Instead, playfully tease the request, tell them it's not in the vault yet, and suggest a relatable alternative or ask what skin goal they want to achieve.
+- Respond to what the person actually said. If they say "hello", greet them warmly and ask how they are or what is on their mind. Never answer a greeting with a list of things they can ask.
+- Be personable, relaxed, kind, and naturally funny. Use light, affectionate humour when it fits (for example, a playful nod to Nigerian heat or harmattan), but never force a joke or make fun of someone's skin, appearance, budget, identity, or concern.
+- Nigerian expressions such as "How far?", "no wahala", or "this Naija heat" are welcome occasionally and only when they sound natural. Don't overdo slang, assume a particular dialect, or imitate a caricature. Plain, warm English is always fine.
+- Match the user's energy and message length. A greeting or casual chat deserves a casual reply; a worried skin concern deserves empathy; a direct factual question deserves a clear answer. Don't make every reply a pitch or tack on a question unnecessarily.
+- Keep most replies to 1–3 short, natural sentences. Avoid canned openers, repeated phrases, excessive exclamation marks, and robotic labels such as "Product Suggestion" or "Price".
+
+Skincare and product guidance:
+- Use only the product information in the catalog below. Never invent products, ingredients, stock, prices, delivery promises, or medical claims. Prices in the catalog are in naira; quote the exact listed price when asked.
+- For oily/acne-prone skin, Salises Purifying Cleanser may be relevant. For dark spots/hyperpigmentation, Botanical Glow Drop Serum and Sol Shield SPF 50 may be relevant. Explain benefits cautiously; don't promise a cure or diagnose.
+- Be thoughtful and reassuring about skin concerns. Avoid implying that natural skin tones or normal skin texture need fixing.
+- Only when the user asks for a product recommendation, a specific product, or product images, add this JSON block at the very end, using real product IDs from the catalog. Do not add it to greetings or general questions:
 \`\`\`json
 { "suggestedProductIds": ["product-id-1"] }
 \`\`\`
-Do NOT include JSON block for general questions.;
-
-Example Transformation:
-Robotic: "For oily skin, we suggest Salises Blemish & Pore Purifying Cleanser—it clears pores and controls shine. It’s priced at ₦15,200."
-Human (Your Style): "Ah, dealing with oily skin in this our Naija weather can be so frustrating, but don't worry! I highly recommend our Salises Purifying Cleanser—it keeps the shine away and clears out pores beautifully. It goes for ₦15,200. Would you like me to add it to your cart?" 
-
-
-
 
 Product Catalog:
 ${JSON.stringify(productCatalogSummary, null, 2)}`
@@ -217,69 +215,46 @@ ${JSON.stringify(productCatalogSummary, null, 2)}`
       .map((m) => ({
         role: m.role,
         content: m.content
-      }));
+      }))
+      .slice(-20);
 
     let apiSuccess = false;
 
-    if (apiKey) {
-      for (const modelName of GROQ_MODELS) {
+    try {
+      const assistantContent = await requestGroq('chat', [
+        { role: 'system', content: systemPrompt },
+        ...chatHistory,
+        { role: 'user', content: query.trim() }
+      ]);
+      let assistantText = assistantContent;
+      let suggestedIds = [];
+
+      // Extract JSON suggestedProductIds if present
+      const jsonMatch = assistantText.match(/```json\s*(\{[\s\S]*?\})\s*```/);
+      if (jsonMatch) {
         try {
-          const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${apiKey}`
-            },
-            body: JSON.stringify({
-              model: modelName,
-              messages: [
-                { role: 'system', content: systemPrompt },
-                ...chatHistory,
-                { role: 'user', content: query.trim() }
-              ],
-              temperature: 0.3,
-              max_tokens: 80
-            })
-          });
-
-          if (response.status === 200) {
-            const data = await response.json();
-            let assistantText = data.choices?.[0]?.message?.content;
-
-            if (assistantText) {
-              let suggestedIds = [];
-
-              // Extract JSON suggestedProductIds if present
-              const jsonMatch = assistantText.match(/```json\s*(\{[\s\S]*?\})\s*```/);
-              if (jsonMatch) {
-                try {
-                  const parsed = JSON.parse(jsonMatch[1]);
-                  if (Array.isArray(parsed.suggestedProductIds)) {
-                    suggestedIds = parsed.suggestedProductIds;
-                  }
-                } catch {
-                  // Ignore JSON parse fail
-                }
-                assistantText = assistantText.replace(/```json\s*\{[\s\S]*?\}\s*```/g, '').trim();
-              }
-
-              setMessages((prev) => [
-                ...prev,
-                {
-                  id: `ai-${Date.now()}`,
-                  role: 'assistant',
-                  content: assistantText,
-                  suggestedProductIds: suggestedIds
-                }
-              ]);
-              apiSuccess = true;
-              break; // Success! Exit model retry loop
-            }
+          const parsed = JSON.parse(jsonMatch[1]);
+          if (Array.isArray(parsed.suggestedProductIds)) {
+            suggestedIds = parsed.suggestedProductIds;
           }
-        } catch (err) {
-          console.warn(`Groq model ${modelName} fetch error:`, err);
+        } catch {
+          // Ignore malformed optional product recommendations.
         }
+        assistantText = assistantText.replace(/```json\s*\{[\s\S]*?\}\s*```/g, '').trim();
       }
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `ai-${Date.now()}`,
+          role: 'assistant',
+          content: assistantText,
+          suggestedProductIds: suggestedIds
+        }
+      ]);
+      apiSuccess = true;
+    } catch (err) {
+      console.warn('Groq chat request failed:', err);
     }
 
     // Fallback if API fails or network offline
@@ -304,7 +279,7 @@ ${JSON.stringify(productCatalogSummary, null, 2)}`
       {
         id: 'welcome-msg',
         role: 'assistant',
-        content: "Chat cleared! How can I assist you with Lumière Botanics skincare today?",
+        content: "Fresh start! 😊 What’s on your mind today—skincare, products, or just a little gist?",
         suggestedProductIds: []
       }
     ]);
